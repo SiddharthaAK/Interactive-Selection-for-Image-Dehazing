@@ -3,8 +3,11 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 import torchvision.transforms as transforms
 import torch
-from DehazingModel import AODnet 
+from DehazingModel import AODnet  # Assuming this is your custom model class
 from torchvision.io import read_image
+import io
+from Preprocess import Preprocess  # Assuming this is your custom preprocessing class
+
 
 class ImageDehazerApp:
     def __init__(self, root):
@@ -15,10 +18,14 @@ class ImageDehazerApp:
         self.image_path = None
         self.bbox_start = None
         self.temp_rectangle = None
+        self.dehazed_image = None  # Store the dehazed image for display
 
         # UI Elements
         self.canvas = tk.Canvas(root, width=400, height=400)
         self.canvas.pack()
+
+        self.dehazed_canvas = tk.Canvas(root, width=400, height=400)  # New canvas for dehazed image
+        self.dehazed_canvas.pack()
 
         self.upload_button = tk.Button(root, text="Upload Image", command=self.open_image)
         self.upload_button.pack()
@@ -26,8 +33,12 @@ class ImageDehazerApp:
         self.dehaze_button = tk.Button(root, text="Dehaze Selected Area", command=self.dehaze_selected_area)
         self.dehaze_button.pack()
 
-        # Load AODnet model
-        self.aodnet_model = self.load_aodnet_model()
+        # Load AODnet model (consider adding error handling for loading issues)
+        try:
+            self.aodnet_model = self.load_aodnet_model()
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            # Handle loading error (e.g., display error message, disable dehazing button)
 
         # Event bindings for drawing bounding box
         self.canvas.bind("<Button-1>", self.draw_bbox_start)
@@ -37,11 +48,13 @@ class ImageDehazerApp:
     def open_image(self):
         self.image_path = filedialog.askopenfilename()
         if self.image_path:
-            img = Image.open(self.image_path)
-            img.thumbnail((400, 400))  # Resize image to fit display
+            self.original_image = Image.open(self.image_path)
+            img = self.original_image.copy()  # Make a copy
+            img.thumbnail((400, 400))  # Resize for display
             img_tk = ImageTk.PhotoImage(img)
             self.canvas.img = img_tk
             self.canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
+            self.dehazed_image = None  # Reset dehazed image when opening a new image
 
     def draw_bbox_start(self, event):
         self.bbox_start = (event.x, event.y)
@@ -58,15 +71,35 @@ class ImageDehazerApp:
         x0, y0 = self.bbox_start
         x1, y1 = event.x, event.y
 
-        # Store the final coordinates or perform additional actions
+        # Ensure coordinates are within image bounds
+        max_x = self.original_image.width - 1
+        max_y = self.original_image.height - 1
+        x0 = max(0, min(x0, max_x))  # Clamp x0 between 0 and max_x
+        y0 = max(0, min(y0, max_y))  # Clamp y0 between 0 and max_y
+        x1 = max(0, min(x1, max_x))  # Clamp x1 between 0 and max_x
+        y1 = max(0, min(y1, max_y))  # Clamp y1 between 0 and max_y
+
         self.bbox_coordinates = (x0, y0, x1, y1)
 
-    def load_aodnet_model(model_path):
+        # Dehaze the selected area if a dehazed image doesn't already exist
+        if not self.dehazed_image:
+            self.dehaze_selected_area()
+
+
+    def load_aodnet_model(self):
+        # Specify the path to your model weights
+        model_path = model_path = "C:\\uni\\Sem 4\\IML\\Image Dehazing\\Dehazing\\saved_models\\49_best_model_2024-03-03_01-58-26.pth\\AOD_49.pth"
+
+
+        # Load the model weights into memory using io.BytesIO
+        with open(model_path, 'rb') as f:
+            buffer = io.BytesIO(f.read())
+
         # Instantiate an AODnet model
         model = AODnet()
 
-        # Load the model weights from the provided path
-        checkpoint = torch.load(model_path)
+        # Load the model weights from the buffer
+        checkpoint = torch.load(buffer)
         model.load_state_dict(checkpoint['state_dict'])
         model.eval()  # Set the model to evaluation mode
 
@@ -79,21 +112,18 @@ class ImageDehazerApp:
             # Extract the selected area from the original image
             selected_area = self.original_image.crop((x0, y0, x1, y1))
 
-            # Convert selected_area to the format suitable for your ML model
-            transform = transforms.Compose([
-                transforms.ToTensor(),  # Convert PIL Image to PyTorch Tensor
-                # Add any other transformations needed for your model input
-            ])
-            selected_area_tensor = transform(selected_area).unsqueeze(0)
+            # Create an instance of the Preprocess class
+            preprocessor = Preprocess()
 
-            # Pass selected_area_tensor through your ML model to get the dehazed output
-            model = AODnet()  # Instantiate your AODnet model
-            dehazed_output = model(selected_area_tensor)
+            # Call the preprocess method on the selected_area
+            preprocessed_segmented_image = preprocessor.preprocess(selected_area)
 
-            dehazed_img_pil = transforms.ToPILImage()(dehazed_output.squeeze(0).cpu())
+            dehazed_img_pil = transforms.ToPILImage()(preprocessed_segmented_image)
             dehazed_img_tk = ImageTk.PhotoImage(dehazed_img_pil)
             self.dehazed_canvas.img = dehazed_img_tk
             self.dehazed_canvas.create_image(0, 0, anchor=tk.NW, image=dehazed_img_tk)
+
+
 
     def display_dehazed_region(self, dehazed_region):
         # Display the dehazed result
