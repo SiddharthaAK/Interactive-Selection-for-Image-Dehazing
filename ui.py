@@ -88,7 +88,7 @@ class ImageDehazerApp:
 
     def load_aodnet_model(self):
         # Specify the path to your model weights
-        model_path = model_path = "C:\\uni\\Sem 4\\IML\\Image Dehazing\\Dehazing\\saved_models\\49_best_model_2024-03-03_01-58-26.pth\\AOD_49.pth"
+        model_path = model_path = "C:\\uni\\Sem 4\\IML\\Image Dehazing\\Dehazing\\saved_models\\199_best_model_2024-03-04_05-36-54.pth\\AOD_199.pth"
 
 
         # Load the model weights into memory using io.BytesIO
