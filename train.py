@@ -1,7 +1,7 @@
 import os
 import datetime
-from PIL import Image
 import pathlib
+import numpy as np
 from DehazingDataset import DatasetType, DehazingDataset
 from DehazingModel import AODnet
 import torch
@@ -11,6 +11,7 @@ import torch.optim as optim
 import torch.utils.data as tu_data
 import torchvision.transforms as transforms
 from torchmetrics.image import StructuralSimilarityIndexMeasure
+from skimage.metrics import peak_signal_noise_ratio
 from Preprocess import Preprocess
 
 def GetProjectDir() -> pathlib.Path:
@@ -34,9 +35,12 @@ if __name__ == "__main__":
     trainingDataset = DehazingDataset(dehazingDatasetPath=datasetPath, _type=DatasetType.Train, transformFn=Preprocess, verbose=False)
     validationDataset = DehazingDataset(dehazingDatasetPath=datasetPath, _type=DatasetType.Validation, transformFn=Preprocess, verbose=False)
 
-    # TODO: Abstract this in DehazingModel.py
-    trainingDataLoader = tu_data.DataLoader(trainingDataset, batch_size=32, shuffle=True, num_workers=3)
-    validationDataLoader = tu_data.DataLoader(validationDataset, batch_size=32, shuffle=True, num_workers=3)
+    # Define batch size
+    batch_size = 32
+
+    # Create data loaders with specified batch size
+    trainingDataLoader = tu_data.DataLoader(trainingDataset, batch_size=batch_size, shuffle=True, num_workers=3)
+    validationDataLoader = tu_data.DataLoader(validationDataset, batch_size=batch_size, shuffle=True, num_workers=3)
 
     print(len(trainingDataset), len(validationDataset))
 
@@ -49,7 +53,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     EPOCHS = 200
-
+    patience = 5
+    early_stopping_counter = 0
     train_number = len(trainingDataLoader)
 
     print("Started Training...")
@@ -81,39 +86,62 @@ if __name__ == "__main__":
 
         # -------------------------------------------------------------------
         # Validation loop
-    print("Epoch: {}/{} | Validation Model Saving Images".format(epoch + 1, EPOCHS))
-    model.eval()
+        avg_ssim = 0.0
+        avg_psnr = 0.0
+        total_batches = len(validationDataLoader)
+        model.eval()
+        for step, (haze_image, ori_image) in enumerate(validationDataLoader):
+            try:
+                if step > 10:  # only save image 10 times
+                    break
+                ori_image, haze_image = ori_image.to(device), haze_image.to(device)
+                dehaze_image = model(haze_image)
 
-    for step, (haze_image, ori_image) in enumerate(validationDataLoader):
-        try:
-            if step > 10:  # only save image 10 times
-                break
-            ori_image, haze_image = ori_image.to(device), haze_image.to(device)
-            dehaze_image = model(haze_image)
+                ssim = StructuralSimilarityIndexMeasure().to(device)
+                ssim_val = ssim(dehaze_image, ori_image)
+                avg_ssim += ssim_val
 
-            ssim = StructuralSimilarityIndexMeasure().to(device)
-            ssim_val = ssim(dehaze_image, ori_image)
-            print(f"SSIM: {ssim_val}")
+                # Convert images to NumPy arrays
+                ori_image_np = np.array(torchvision.transforms.ToPILImage()(ori_image[0].cpu()))
+                dehaze_image_np = np.array(torchvision.transforms.ToPILImage()(dehaze_image[0].cpu()))
 
-            # Save only the model with the highest SSIM
-            if ssim_val > best_ssim:
-                best_ssim = ssim_val
-                best_model_path = os.path.join(
-                    GetProjectDir() / "saved_models",
-                    "{}_best_model_{}.pth".format(epoch, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                # Calculate PSNR
+                psnr_val = peak_signal_noise_ratio(ori_image_np, dehaze_image_np)
+                avg_psnr += psnr_val
+
+                torchvision.utils.save_image(
+                    torchvision.utils.make_grid(torch.cat((haze_image, dehaze_image, ori_image), 0), nrow=ori_image.shape[0]),
+                    os.path.join(GetProjectDir() / "output", "{}_{}.jpg".format(epoch + 1, step)),
                 )
 
-            torchvision.utils.save_image(
-                torchvision.utils.make_grid(torch.cat((haze_image, dehaze_image, ori_image), 0), nrow=ori_image.shape[0]),
-                os.path.join(GetProjectDir() / "output", "{}_{}.jpg".format(epoch + 1, step)),
+            except FileNotFoundError as e:
+                # Handle missing file error, for example, print a message
+                print(f"Error: {e}. Skipping this batch.")
+
+        avg_ssim /= total_batches
+        avg_psnr /= total_batches
+        print(f"Avg SSIM for Epoch {epoch + 1}: {avg_ssim}")
+        print(f"Avg PSNR for Epoch {epoch + 1}: {avg_psnr}")
+
+        model.train()
+
+        # Early stopping
+        if avg_ssim > best_ssim:
+            best_ssim = avg_ssim
+            best_model_path = os.path.join(
+                GetProjectDir() / "saved_models",
+                "{}_best_model_{}.pth".format(epoch, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
             )
+            early_stopping_counter = 0
+        else:
+            early_stopping_counter += 1
+            if early_stopping_counter >= patience:
+                print(f"Early stopping at epoch {epoch + 1} as validation SSIM did not improve for {patience} epochs.")
+                break
 
-        except FileNotFoundError as e:
-            # Handle missing file error, for example, print a message
-            print(f"Error: {e}. Skipping this batch.")
-
-    model.train()
-
+    # Save the best model after all epochs
+    if best_model_path:
+        save_model(epoch, GetProjectDir() / "saved_models", model, optimizer, best_model_path)
     # Save the best model after all epochs
     if best_model_path:
         save_model(epoch, GetProjectDir() / "saved_models", model, optimizer, best_model_path)
