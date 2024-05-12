@@ -20,8 +20,9 @@ class DCPModel(nn.Module):
         # Define additional layers for the DCP model
         self.conv1 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(384, 64, kernel_size=3, padding=1)  # Adjusted number of input channels
         self.conv4 = nn.Conv2d(64, 3, kernel_size=3, padding=1)  # Output 3 channels
+        self.conv_final = nn.Conv2d(451, 3, kernel_size=3, padding=1)  # Adjusted number of input channels
 
         self.relu = nn.ReLU(inplace=True)
         
@@ -29,21 +30,28 @@ class DCPModel(nn.Module):
         
     def forward(self, x):
         # Forward pass through the ResNet base layers
-        x = self.base_layers(x)
-
-        # Forward pass through the last convolutional layer
-        x = self.conv5(x)
+        x_base = self.base_layers(x)
+        x_resnet = self.conv5(x_base)
 
         # Upsample the feature maps to the desired output size
-        x = self.upsample(x)
+        x_upsampled = self.upsample(x_resnet)
 
-        # Apply additional convolutional layers
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.relu(x)
-        x = self.conv3(x)
-        x = self.relu(x)
-        x = self.conv4(x)  # Output 3 channels
-
-        return x
+        # Apply intermediate convolutional layers
+        x1 = self.relu(self.conv1(x_upsampled))
+        x2 = self.relu(self.conv2(x1))
+        cat1 = torch.cat((x1, x2), 1)
+    
+        x3 = self.relu(self.conv3(cat1))
+        x4 = self.relu(self.conv4(x3))
+    
+        # Concatenate the intermediate features
+        cat2 = torch.cat((x1, x2, x3, x4), 1)
+        
+        #print("Shape of cat2:", cat2.shape)
+        
+        # Apply the final convolutional layer
+        x_final = self.conv_final(cat2)
+        
+        #print("Shape of x_final:", x_final.shape)
+        
+        return x_final
