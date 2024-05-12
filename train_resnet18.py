@@ -10,7 +10,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from DehazingDataset import DatasetType, DehazingDataset
 #from DehazingModel_1 import AODnet
 from Preprocess_1 import Preprocess
-from DCPModel_ResNet import DCPModel
+from Model_ResNet import DCPModel
 
 def GetProjectDir() -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent
