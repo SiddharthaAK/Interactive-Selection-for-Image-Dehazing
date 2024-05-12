@@ -10,7 +10,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from torchvision.models import vgg16
 from DehazingDataset import DatasetType, DehazingDataset
 from Preprocess_1 import Preprocess
-from Model_VGG import DCPModel
+from Model_VGG import Model
 
 def GetProjectDir() -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     print(len(trainingDataset), len(validationDataset))
 
-    model = DCPModel().to(device)
+    model = Model().to(device)
     print(model)
 
     best_ssim = 0.0
