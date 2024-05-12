@@ -10,7 +10,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from torchvision.models import vgg16
 from DehazingDataset import DatasetType, DehazingDataset
 from Preprocess_1 import Preprocess
-from DCPModel_VGG import DCPModel
+from Model_VGG import DCPModel
 
 def GetProjectDir() -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent
