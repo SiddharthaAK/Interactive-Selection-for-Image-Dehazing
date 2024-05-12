@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
-class DCPModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
-        super(DCPModel, self).__init__()
+        super(Model, self).__init__()
 
         # Load a pre-trained ResNet model as the base
         resnet = models.resnet18(pretrained=True)
